@@ -17,48 +17,98 @@ class Pattern:
         self.width  = shape[1]
         self.depth  = shape[2] if len(shape) == 3 else 1
 
-    def apply(self, subset: np.ndarray, pattern_type: str, pattern_size: tuple[int], pattern_pos: tuple[int], fill_value: int = 255, **kwargs) -> tuple[np.ndarray]:
+    def apply(self, subset: np.ndarray, pattern_type: str, **kwargs) -> tuple[np.ndarray]:
         """
         Args:
             - `subset` (np.ndarray): 
-            - `pattern_type` (type): 
-            - `pattern_size` (type): 
-            - `pattern_pos` (type): 
-            - `fill_value` (type): 
+            - `pattern_type` (str): 
+                - possible values = {'solid', 'checkerboard', 'gaussian'}
             - kwargs :
                 - if pattern_type == 'solid':
+                    - `pattern_size` (tuple[int]): 
+                    - `pattern_pos` (tuple[int]): 
+                    - `fill_value` (int): [Defaults to 255]
                     - `shape`: (str, optional). possible values = {'rectangle', 'ellipsis'}. Defaults to 'rectangle'.
                 - if pattern_type == 'checkerboard':
+                    - `pattern_size` (tuple[int]): 
+                    - `pattern_pos` (tuple[int]): 
+                    - `fill_value` (int): [Defaults to 255]
                     - `compliment`: (bool, optional). possible values = {True, False}. Defaults to False.
+                - if pattern_type == 'gaussian':
+                    - `mu` (int): The Mean of the gaussian noise distribution [Defaults to 0]
+                    - `std` (int): The Standard Deviation of the gaussian noise distribution [Defaults to 1]
+                    - `seed` (int): set a fixed seed to get the same gaussian [Defaults to 42]
         
         Returns tuple[np.ndarray]: (clean_set, poison_set), pattern
         """
 
+        clean_set = subset.copy()
+
         # create the pattern
         if pattern_type == 'solid':
-            shape = kwargs['shape']
+
+            pattern_size = kwargs.get('pattern_size')
+            pattern_pos  = kwargs.get('pattern_pos')
+            fill_value   = kwargs.get('fill_value')
+            shape        = kwargs.get('shape')
+
             if shape:
                 pattern = self.__solid_pattern(pattern_size, fill_value, shape)
             else:
                 pattern = self.__solid_pattern(pattern_size, fill_value)
 
+            # apply the pattern
+            pattern_height_pos = slice(pattern_pos[0], pattern_pos[0] + pattern.shape[0])
+            pattern_width_pos  = slice(pattern_pos[1], pattern_pos[1] + pattern.shape[1])
+            subset[:, pattern_height_pos, pattern_width_pos] = pattern[None, :, :]
+
         elif pattern_type == 'checkerboard':
-            compliment = kwargs.get('compliment')
+
+            pattern_size = kwargs.get('pattern_size')
+            pattern_pos  = kwargs.get('pattern_pos')
+            fill_value   = kwargs.get('fill_value')
+            compliment   = kwargs.get('compliment')
+
+            if not fill_value:
+                fill_value = 255
+
             if compliment:
                 pattern = self.__checkerboard_pattern(pattern_size, fill_value, compliment)
             else:
                 pattern = self.__checkerboard_pattern(pattern_size, fill_value)
-            
-        else:
-            raise ValueError(f"Invalid `pattern_type` value: {pattern_type}; should be {{'solid', 'checkerboard'}}.")
+
+            # apply the pattern
+            pattern_height_pos = slice(pattern_pos[0], pattern_pos[0] + pattern.shape[0])
+            pattern_width_pos  = slice(pattern_pos[1], pattern_pos[1] + pattern.shape[1])
+            subset[:, pattern_height_pos, pattern_width_pos] = pattern[None, :, :]
         
-        # apply the pattern
-        clean_set = subset.copy()
+        elif pattern_type == 'gaussian':
 
-        pattern_height_pos = slice(pattern_pos[0], pattern_pos[0] + pattern.shape[0])
-        pattern_width_pos  = slice(pattern_pos[1], pattern_pos[1] + pattern.shape[1])
+            mu   = kwargs.get('mu')
+            std  = kwargs.get('std')
+            seed = kwargs.get('seed')
+            pattern_pos = (0, 0)
 
-        subset[:, pattern_height_pos, pattern_width_pos] = pattern[None, :, :, None]
+            if not mu  : mu = 0
+            if not std : std = 1
+            if not seed: seed == 42
+
+            # set the seed
+            np.random.seed(seed)
+
+            pattern = self.__gaussian_noise_pattern(mu, std)
+
+            # apply the pattern
+            pattern_height_pos = slice(pattern_pos[0], pattern_pos[0] + pattern.shape[0])
+            pattern_width_pos  = slice(pattern_pos[1], pattern_pos[1] + pattern.shape[1])
+
+            subset = subset.astype(np.float64)
+            subset[:, pattern_height_pos, pattern_width_pos] += pattern[None, :, :]
+            subset = subset.clip(min= np.iinfo(self.dtype).min, max= np.iinfo(self.dtype).max)
+            subset = subset.astype(self.dtype)
+
+        else:
+            raise ValueError(f"Invalid `pattern_type` value: {pattern_type}; should be {{'solid', 'checkerboard', 'gaussian'}}.")
 
         return (clean_set, subset), pattern
 
@@ -87,7 +137,6 @@ class Pattern:
 
         if shape == 'rectangle':
             solid_pattern = np.full(shape= size, fill_value= fill_value, dtype= self.dtype)
-            return solid_pattern
         
         elif shape == 'ellipsis':
             a, b = (size[0] - 1) / 2, (size[1] - 1) / 2
@@ -108,10 +157,17 @@ class Pattern:
             
             solid_pattern[mask] = fill_value
 
-            return solid_pattern.astype(self.dtype)
+            solid_pattern = solid_pattern.astype(self.dtype)
         
         else:
             raise ValueError(f"Invalid `shape` value: {shape}; should be {{'rectangle', 'ellipsis'}}.")
+    
+
+        # repeat by depth
+        solid_pattern = solid_pattern[:, :, None]
+        solid_pattern = np.repeat(solid_pattern, self.depth, axis= 2)
+
+        return solid_pattern
         
 
     def __checkerboard_pattern(self, size: tuple[int], fill_value: int = 255, compliment: bool = False) -> np.ndarray:
@@ -146,7 +202,33 @@ class Pattern:
         # fill values
         checkerboard_pattern *= fill_value
 
+        # repeat by depth
+        checkerboard_pattern = checkerboard_pattern[:, :, None]
+        checkerboard_pattern = np.repeat(checkerboard_pattern, self.depth, axis= 2)
+
         return checkerboard_pattern
+
+
+    def __gaussian_noise_pattern(self, mu: int = 0, std: int = 1, seed: int = 42) -> np.ndarray:
+        """
+        Create a gaussian_noise pattern.
+
+        Args:
+            - `mu` (int, optional): The Mean of the gaussian noise distribution
+                - Defaults to 0.
+            - `std` (int, optional): The Standard Deviation of the gaussian noise distribution
+                - Defaults to 1.
+            - `seed` (int): set a fixed seed to get the same gaussian
+                - Defaults t0 42.
+        
+        Returns:
+            - np.ndarray
+        """
+        
+        # create checkerboard pattern with 0-1 values
+        gaussian_pattern = np.random.normal(loc= mu, scale= std, size= (self.height, self.width, self.depth))
+
+        return gaussian_pattern
 
 
 if __name__ == '__main__':
@@ -166,14 +248,19 @@ if __name__ == '__main__':
 
     # checkerboard pattern
     _, checkerboard_pattern_1 = pattern.apply(subset, 'checkerboard', pattern_size= (3, 3), pattern_pos= (28, 28), fill_value= 255)
-    (_, poison), checkerboard_pattern_2 = pattern.apply(subset, 'checkerboard', pattern_size= (3, 3), pattern_pos= (28, 28), fill_value= 255, compliment= True)
+    _, checkerboard_pattern_2 = pattern.apply(subset, 'checkerboard', pattern_size= (3, 3), pattern_pos= (28, 28), fill_value= 255, compliment= True)
     print(checkerboard_pattern_1)
     print(checkerboard_pattern_2)
+
+    # gaussian pattern
+    (_, poison), gaussian_pattern_1 = pattern.apply(subset, 'gaussian', mu= 0, std= 5, seed= 42)
+    print(gaussian_pattern_1.min())
+    print(gaussian_pattern_1.max())
 
     # plot
     fig, axs = plt.subplots(nrows= 1, ncols= 1, figsize= (4, 4), layout= 'compressed')
 
-    axs.imshow(poison[0])
+    axs.imshow(poison[0], vmin= 0, vmax= 255)
     axs.axis('off')
 
     plt.show()
