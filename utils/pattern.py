@@ -113,6 +113,13 @@ class Pattern:
             - np.ndarray
         """
 
+        # default parameters value
+        defaults = {
+            'fill_value': 255,
+            'shape'     : 'rectangle',
+        }
+        kwargs = {**defaults, **kwargs}
+
         # check `size` to be smaller than the size of the images in the dataset
         assert kwargs['pattern_size'][0] < self.height and kwargs['pattern_size'][1] < self.width, f"Invalid `size` value: {kwargs['pattern_size']}; it should be less than image size which is {self.height, self.width}"
 
@@ -171,6 +178,13 @@ class Pattern:
             - np.ndarray
         """
 
+        # default parameters value
+        defaults = {
+            'fill_value': 255,
+            'compliment': False,
+        }
+        kwargs = {**defaults, **kwargs}
+
         # check `size` to be smaller than the size of the images in the dataset
         assert kwargs['pattern_size'][0] < self.height and kwargs['pattern_size'][1] < self.width, f"Invalid `size` value: {kwargs['pattern_size']}; it should be less than image size which is {self.height, self.width}"
 
@@ -201,20 +215,30 @@ class Pattern:
             - `mu` (int, optional): The Mean of the gaussian noise distribution
                 - Defaults to 0.
             - `std` (int, optional): The Standard Deviation of the gaussian noise distribution
-                - Defaults to 1.
+                - Defaults to 5.
             - `seed` (int): set a fixed seed to get the same gaussian
                 - Defaults t0 42.
         
         Returns:
             - np.ndarray
         """
-        
+
+        # default parameters value
+        defaults = {
+            'mu'  : 0,
+            'std' : 5,
+            'seed': 42,
+        }
+        kwargs = {**defaults, **kwargs}
+
         # set a fixed seed
         np.random.seed(kwargs['seed'])
         
         gaussian_pattern = np.random.normal(loc= kwargs['mu'], scale= kwargs['std'], size= (self.height, self.width, self.depth))
 
         return gaussian_pattern
+    
+
 
 
 if __name__ == '__main__':
