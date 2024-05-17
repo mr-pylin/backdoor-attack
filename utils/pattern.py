@@ -5,6 +5,7 @@ class PatternType(Enum):
     SOLID                 = 'solid'
     CHECKERBOARD          = 'checkerboard'
     GAUSSIAN              = 'gaussian'
+    LEAST_SIGNIFICANT_BIT = 'least_significant_bit'
 
 class Pattern:
     def __init__(self, dtype: type, shape: tuple[int]) -> None:
@@ -83,18 +84,23 @@ class Pattern:
         Returns:
             - np.ndarray
         """
-        pattern_height_pos = slice(0 + kwargs.get('pattern_pos', [0, 0])[0], pattern.shape[0] + kwargs.get('pattern_pos', [0, 0])[0])
-        pattern_width_pos  = slice(0 + kwargs.get('pattern_pos', [0, 0])[1], pattern.shape[1] + kwargs.get('pattern_pos', [0, 0])[1])
 
         if pattern_type == PatternType.SOLID:
+            pattern_height_pos = slice(0 + kwargs['pattern_pos'][0], pattern.shape[0] + kwargs['pattern_pos'][0])
+            pattern_width_pos  = slice(0 + kwargs['pattern_pos'][1], pattern.shape[1] + kwargs['pattern_pos'][1])
             subset[:, pattern_height_pos, pattern_width_pos] = pattern[None, :, :]
+
         elif pattern_type == PatternType.CHECKERBOARD:
+            pattern_height_pos = slice(0 + kwargs['pattern_pos'][0], pattern.shape[0] + kwargs['pattern_pos'][0])
+            pattern_width_pos  = slice(0 + kwargs['pattern_pos'][1], pattern.shape[1] + kwargs['pattern_pos'][1])
             subset[:, pattern_height_pos, pattern_width_pos] = pattern[None, :, :]
+
         elif pattern_type == PatternType.GAUSSIAN:
             subset = subset.astype(np.float64)
-            subset[:, pattern_height_pos, pattern_width_pos] += pattern[None, :, :]
+            subset += pattern
             subset = subset.clip(min= np.iinfo(self.dtype).min, max= np.iinfo(self.dtype).max)
             subset = subset.astype(self.dtype)
+            
         elif pattern_type == PatternType.LEAST_SIGNIFICANT_BIT:
             subset &= pattern
 
@@ -105,7 +111,7 @@ class Pattern:
         Create a solid pattern.
 
         Args:
-            - `size` (tuple[int]): Size of the pattern. must be less than image width & height.
+            - `pattern_size` (tuple[int]): Size of the pattern. must be less than image width & height.
                 - e.g. `(3, 4)` is a pattern with height= 3 and width= 4.
             - `fill_value` (int, optional): A value to fill the pattern in the range `[0, 2**L]` where L is the BPP(bits per pixel) of the dataset.
                 - Defaults to 255.
@@ -170,7 +176,7 @@ class Pattern:
         Create a checkerboard pattern.
 
         Args:
-            - `size` (tuple[int]): Size of the pattern. must be less than image width & height.
+            - `pattern_size` (tuple[int]): Size of the pattern. must be less than image width & height.
                 - e.g. `(3, 4)` is a pattern with height= 3 and width= 4.
             - `fill_value` (int, optional): A value to fill the pattern in the range `[0, 2**L]` where L is the BPP(bits per pixel) of the dataset.
                 - Defaults to 255.
@@ -243,6 +249,27 @@ class Pattern:
         return gaussian_pattern
 
 
+    def _least_significant_bits_pattern(self, **kwargs) -> np.ndarray:
+        """
+        Create a least_significant_bits pattern.
+
+        Args:
+            - `mask` (str): sequence of 0 and 1 followed by number of image bits e.g. "11111100"
+        
+        Returns:
+            - np.ndarray
+        """
+
+        # check `mask` length matches with the number of bits per pixel of images
+        assert len(kwargs['mask']) == np.iinfo(self.dtype).bits, f"Invalid `mask` value: {kwargs['mask']}; the length of the mask should be equal to number of bits per pixel of images which is {np.iinfo(self.dtype).bits}"
+
+        # check `mask` to be a string of values {'0', '1'}
+        assert set(kwargs['mask']).issubset({'0', '1'}), f"Invalid `mask` value: {kwargs['mask']}; only a sequence of 0 and 1 is allowed"
+
+        mask_pattern = int(kwargs['mask'], 2)
+
+        return mask_pattern
+
 if __name__ == '__main__':
 
     # dependencies
@@ -282,6 +309,12 @@ if __name__ == '__main__':
     print("gaussian pattern:")
     print(gaussian_pattern.shape)
 
+    # apply a least significant bit pattern
+    pattern_params_5 = {'mask': '11110000'}
+    (clean_set_5, poison_set_5), least_significant_bit_pattern = pattern_generator.apply(subset.copy(), PatternType.LEAST_SIGNIFICANT_BIT, **pattern_params_5)
+    print("least_significant bit pattern pattern:")
+    print(least_significant_bit_pattern)
+
     # plot
     fig, axs = plt.subplots(nrows= 3, ncols= 5, figsize= (16, 12), layout= 'compressed')
 
@@ -293,6 +326,8 @@ if __name__ == '__main__':
     axs[0, 2].set(title= 'checkerboard', xticks= range(pattern_params_3['pattern_size'][0]), yticks= range(pattern_params_3['pattern_size'][1]))
     axs[0, 3].imshow(gaussian_pattern)
     axs[0, 3].set(title= 'gaussian', xticks= range(0, subset.shape[1], int(subset.shape[1] // 4)), yticks= range(0, subset.shape[2], int(subset.shape[2] // 4)))
+    # axs[0, 4].imshow(least_significant_bit_pattern)
+    axs[0, 4].set(title= f"lsb pattern: {bin(least_significant_bit_pattern)[2:]}")
 
     axs[1, 0].imshow(poison_set_1[0], vmin= 0, vmax= 255)
     axs[1, 0].set_title('sample 1')
@@ -306,6 +341,9 @@ if __name__ == '__main__':
     axs[1, 3].imshow(poison_set_4[0], vmin= 0, vmax= 255)
     axs[1, 3].set_title('sample 1')
     axs[1, 3].axis('off')
+    axs[1, 4].imshow(poison_set_5[0], vmin= 0, vmax= 255)
+    axs[1, 4].set_title('sample 1')
+    axs[1, 4].axis('off')
 
     axs[2, 0].imshow(poison_set_1[1], vmin= 0, vmax= 255)
     axs[2, 0].set_title('sample 2')
@@ -319,5 +357,8 @@ if __name__ == '__main__':
     axs[2, 3].imshow(poison_set_4[1], vmin= 0, vmax= 255)
     axs[2, 3].set_title('sample 2')
     axs[2, 3].axis('off')
+    axs[2, 4].imshow(poison_set_5[1], vmin= 0, vmax= 255)
+    axs[2, 4].set_title('sample 2')
+    axs[2, 4].axis('off')
 
     plt.show()
