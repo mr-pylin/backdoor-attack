@@ -2,9 +2,9 @@ import numpy as np
 from enum import Enum
 
 class PatternType(Enum):
-    SOLID        = 'solid'
-    CHECKERBOARD = 'checkerboard'
-    GAUSSIAN     = 'gaussian'
+    SOLID                 = 'solid'
+    CHECKERBOARD          = 'checkerboard'
+    GAUSSIAN              = 'gaussian'
 
 class Pattern:
     def __init__(self, dtype: type, shape: tuple[int]) -> None:
@@ -39,16 +39,16 @@ class Pattern:
         clean_set  = subset.copy()
 
         # generate the pattern
-        pattern = self.generate_pattern(pattern_type, **kwargs)
+        pattern = self._generate_pattern(pattern_type, **kwargs)
 
         # apply the pattern to the subset
-        poison_set = self.apply_pattern(subset, pattern_type, pattern, **kwargs)
+        poison_set = self._apply_pattern(subset, pattern_type, pattern, **kwargs)
 
         return (clean_set, poison_set), pattern
 
 
 
-    def generate_pattern(self, pattern_type: PatternType, **kwargs) -> np.ndarray:
+    def _generate_pattern(self, pattern_type: PatternType, **kwargs) -> np.ndarray:
         """
         Generate a pattern based on the type.
 
@@ -60,17 +60,19 @@ class Pattern:
             - np.ndarray
         """
         if pattern_type == PatternType.SOLID:
-            return self.__solid_pattern(**kwargs)
+            return self._solid_pattern(**kwargs)
         elif pattern_type == PatternType.CHECKERBOARD:
-            return self.__checkerboard_pattern(**kwargs)
+            return self._checkerboard_pattern(**kwargs)
         elif pattern_type == PatternType.GAUSSIAN:
-            return self.__gaussian_noise_pattern(**kwargs)
+            return self._gaussian_noise_pattern(**kwargs)
+        elif pattern_type == PatternType.LEAST_SIGNIFICANT_BIT:
+            return self._least_significant_bits_pattern(**kwargs)
         else:
             raise ValueError(f"Invalid pattern type: {pattern_type}")
         
 
 
-    def apply_pattern(self, subset: np.ndarray, pattern_type: PatternType, pattern: np.ndarray, **kwargs) -> np.ndarray:
+    def _apply_pattern(self, subset: np.ndarray, pattern_type: PatternType, pattern: np.ndarray, **kwargs) -> np.ndarray:
         """
         Apply a pattern to the dataset.
 
@@ -93,10 +95,12 @@ class Pattern:
             subset[:, pattern_height_pos, pattern_width_pos] += pattern[None, :, :]
             subset = subset.clip(min= np.iinfo(self.dtype).min, max= np.iinfo(self.dtype).max)
             subset = subset.astype(self.dtype)
+        elif pattern_type == PatternType.LEAST_SIGNIFICANT_BIT:
+            subset &= pattern
 
         return subset
 
-    def __solid_pattern(self, **kwargs) -> np.ndarray:
+    def _solid_pattern(self, **kwargs) -> np.ndarray:
         """
         Create a solid pattern.
 
@@ -161,7 +165,7 @@ class Pattern:
         return solid_pattern
         
 
-    def __checkerboard_pattern(self, **kwargs) -> np.ndarray:
+    def _checkerboard_pattern(self, **kwargs) -> np.ndarray:
         """
         Create a checkerboard pattern.
 
@@ -207,7 +211,7 @@ class Pattern:
         return checkerboard_pattern
 
 
-    def __gaussian_noise_pattern(self, **kwargs) -> np.ndarray:
+    def _gaussian_noise_pattern(self, **kwargs) -> np.ndarray:
         """
         Create a gaussian_noise pattern.
 
@@ -237,8 +241,6 @@ class Pattern:
         gaussian_pattern = np.random.normal(loc= kwargs['mu'], scale= kwargs['std'], size= (self.height, self.width, self.depth))
 
         return gaussian_pattern
-    
-
 
 
 if __name__ == '__main__':
